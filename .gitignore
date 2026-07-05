@@ -1,0 +1,18 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Derived data — regeneratable from the raw EPA folders + notebook + AQS API key.
+# Skipped from git to keep the repo small; the notebook rebuilds them end-to-end.
+raw_renamed/
+la_only/
+api_pulls/
