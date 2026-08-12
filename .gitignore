@@ -10,9 +10,14 @@
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
+.venv/
+venv/
 
-# Derived data — regeneratable from the raw EPA folders + notebook + AQS API key.
-# Skipped from git to keep the repo small; the notebook rebuilds them end-to-end.
-raw_renamed/
-la_only/
-api_pulls/
+# Raw MERRA-2 granules — ~200 MB of NetCDF, re-downloadable from GES DISC
+# with data/raw/merra2_manifest.txt (see README).
+data/raw/merra2_slv/
+
+# Derived data — regeneratable from the raw EPA folders + notebooks + AQS API key.
+# Skipped from git to keep the repo small; the notebooks rebuild them end-to-end.
+data/interim/
+__pycache__/

@@ -1,0 +1,14 @@
+ipykernel==7.3.0
+jupyter==1.1.1
+matplotlib==3.11.1
+nbconvert==7.17.1
+nbformat==5.11.0
+netCDF4==1.7.4
+notebook==7.6.2
+numpy==2.5.2
+pandas==3.0.5
+python-dotenv==1.2.2
+requests==2.34.2
+scikit-learn==1.9.0
+scipy==1.18.0
+xarray==2026.7.0
