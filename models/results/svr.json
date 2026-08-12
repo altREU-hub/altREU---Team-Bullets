@@ -1,0 +1,24 @@
+{
+  "model": "SVR",
+  "params": {
+    "model__C": 300,
+    "model__epsilon": 10.0,
+    "model__gamma": 0.01
+  },
+  "notes": "RBF kernel, StandardScaler pipeline, GridSearchCV over 60 combos",
+  "train": {
+    "rmse": 17.245784991230302,
+    "mae": 12.130485672002182,
+    "r2": 0.7828005916730869,
+    "mape": 13.34794392587331,
+    "within_10": 57.674236491777606
+  },
+  "test": {
+    "rmse": 18.851284388557715,
+    "mae": 13.565377116443686,
+    "r2": 0.7819610340950385,
+    "mape": 15.822215901859712,
+    "within_10": 48.949771689497716
+  },
+  "overfit_gap": 1.6054993973274136
+}

@@ -1,94 +1,212 @@
-# altREU---Team-Bullets
+# altREU — Team Bullets
 
-## MERRA-2 (Weather/Atmospheric Data) Data Access
+**Predicting daily air quality in Los Angeles County from weather, 2016–2025.**
 
-The datasets for this project are too large to be hosted directly on GitHub. Instead, they are maintained in a shared Google Drive folder.
+Two daily time series are assembled from scratch and joined: city-wide AQI from EPA
+monitoring data, and weather from NASA's MERRA-2 reanalysis. Six machine-learning
+models are then trained to predict AQI from weather and compared head to head.
 
-link: https://drive.google.com/drive/folders/1z5JRiwKwZazVCDbprDFK9i0DAzCEWDrr?usp=share_link
+**Headline result:** weather explains about **78% of the variance** in LA's daily AQI
+(SVR, test R² 0.782, RMSE 18.9 on three held-out years). But a day-of-year climatology
+using no weather at all already reaches R² 0.38 — so roughly half of that is the
+seasonal cycle, and weather's genuine marginal contribution is the gap between the two.
 
-## EPA AQS Pipeline: LA County Daily AQI (2016–2025)
+See [PROGRESS.md](PROGRESS.md) for the running change log.
 
-A single Jupyter notebook (`aqi_pipeline.ipynb`) builds a clean, city-wide daily AQI time series for Los Angeles County across 2016–2025 from EPA sources. The final dataset uses five criteria pollutants (Ozone, PM2.5, CO, SO2, NO2) pulled directly from the EPA AQS API.
+---
 
-### Final dataset
+## Quick start
 
-**`la_daily_aqi_5pollutants_v2_2016_2025.csv`** — 3,653 rows (one per day, 2016-01-01 → 2025-12-31, zero missing).
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python -m ipykernel install --user --name altreu --display-name "Python (altREU)"
+jupyter notebook
+```
+
+Then run in order:
+
+| # | notebook | what it does |
+|---|---|---|
+| 1 | `notebooks/aqi_pipeline.ipynb` | raw EPA data + AQS API → daily AQI series |
+| 2 | `notebooks/merra2_pipeline.ipynb` | 3,652 hourly NetCDF granules → daily weather |
+| 3 | `notebooks/build_modeling_dataset.ipynb` | join, engineer features, train/test split |
+| 4 | `models/01`–`06_*.ipynb` | one model each, any order |
+| 5 | `models/07_model_comparison.ipynb` | the comparison table and verdict |
+
+Notebooks 1 and 2 need credentials (below). Notebooks 3–7 run on committed CSVs and
+need nothing extra.
+
+---
+
+## Repository layout
+
+```
+data/
+  raw/
+    epa_ozone/            raw EPA AirData ozone exports        [tracked]
+    epa_pollutant/        raw EPA AirData PM2.5 exports        [tracked]
+    merra2_slv/           3,652 MERRA-2 NetCDF granules        [gitignored, ~200 MB]
+    merra2_manifest.txt   GES DISC download URL list           [tracked]
+  corrections/
+    ozone_2021_la.csv     hand-fixed 2021 LA ozone file        [tracked]
+  interim/                raw_renamed/, la_only/, api_pulls/   [gitignored]
+  processed/              all final CSVs                       [tracked]
+
+notebooks/                the three data-pipeline notebooks
+models/
+  model_utils.py          shared split loading + metrics
+  01_linear_regression.ipynb    04_svr.ipynb
+  02_random_forest.ipynb        05_knn.ipynb
+  03_gradient_boosting.ipynb    06_neural_network.ipynb
+  07_model_comparison.ipynb     the comparison table
+  results/                per-model metrics JSON + test predictions
+
+PROGRESS.md               running change log
+requirements.txt          pinned dependencies
+```
+
+**Gitignored:** `data/raw/merra2_slv/`, `data/interim/`, `.venv/`, `.env`, `.DS_Store`.
+Everything ignored is regeneratable — see *Regenerating derived data* below.
+
+---
+
+## The datasets
+
+### `data/processed/la_daily_aqi_5pollutants_v2_2016_2025.csv`
+3,653 rows, one per day, 2016-01-01 → 2025-12-31, zero missing.
 
 | column | description |
 |---|---|
 | `date` | ISO date |
-| `daily_aqi` | Max AQI across all monitors and all pollutants for that day (EPA-style city-wide reporting AQI) |
-| `n_monitor_readings` | Number of monitor-day-pollutant readings used |
-| `n_sites` | Distinct monitoring sites contributing that day |
-| `pollutants_used` | Comma-separated list of pollutants with valid readings |
-| `dominant_pollutant` | Which pollutant drove the daily max (Ozone / PM2.5 / NO2 — CO and SO2 never dominate in LA) |
-| `dominant_site` | Which monitor recorded that max |
+| `daily_aqi` | max AQI across all monitors and all pollutants (EPA-style city-wide reporting AQI) |
+| `n_monitor_readings` | monitor-day-pollutant readings used |
+| `n_sites` | distinct sites contributing |
+| `pollutants_used` | pollutants with valid readings |
+| `dominant_pollutant` | which pollutant drove the max (Ozone / PM2.5 / NO2) |
+| `dominant_site` | which monitor recorded it |
 
-### Data sources
+Built from two sources: pre-downloaded **EPA AirData exports** (ozone + both PM2.5
+codes) and the **EPA AQS API** (`dailyData/byCounty`) for all five criteria pollutants
+at monitor-day resolution.
 
-Two data sources go into the pipeline:
+Two data bugs were found and fixed along the way:
+- **A misfiled 2021 ozone file.** One AirData export was actually a Louisville-metro
+  download. The corrected LA file is committed at `data/corrections/ozone_2021_la.csv`
+  and copied into place automatically by the notebook.
+- **The 88502 gap.** EPA reports PM2.5 under two AQI-valid parameter codes — `88101`
+  (Local Conditions) and `88502` (Acceptable PM2.5 AQI & Speciation Mass). The first
+  API pull fetched only `88101`, silently dropping ~39% of PM2.5 monitor-days, which
+  made the 5-pollutant series read *lower* than the 2-pollutant one on 1,106 days. A
+  second pull closed the gap; that's what `v2` means.
 
-1. **EPA AirData exports** (`EPA Air Quality (Ozone Data)/` and `EPA Air Quality (Pollutant Data)/`) — pre-downloaded CSVs from EPA's AirNow visualization tool. Cover ozone (param 44201) and both PM2.5 codes (88101 + 88502). Used for the initial 2-pollutant baseline and as a sanity-check reference.
-2. **EPA AQS API** (`aqs.epa.gov/data/api/dailyData/byCounty`) — used to pull all five pollutants at monitor-day resolution directly. Requires an API key.
+### `data/processed/la_daily_weather_2016_2025.csv`
+3,652 rows, 2016-01-01 → 2025-12-30. (MERRA-2 had not published 2025-12-31 at pull time,
+which is why the weather series is one day shorter than the AQI series.)
 
-### Pipeline stages (in the notebook)
+Built from MERRA-2 **M2T1NXSLV** granules — one per day, 24 hourly steps × a 3×3 grid
+over 33.5–34.5 °N, 118.75–117.5 °W, with `T2M`, `QV2M`, `U10M`, `V10M`. Each granule is
+reduced by taking the spatial mean over the nine cells, then daily statistics over the
+24 hours: temperature mean/max/min/range (°C), humidity mean/max (g/kg), mean U/V wind,
+wind speed mean/max/min, mean wind direction, and `calm_hours` (hours under 2 m/s).
 
-1. **Inspect raw AirData files** — check years, columns, pollutants per file.
-2. **Rename files by year** — scope to 2016–2025, save to `raw_renamed/` with clean names.
-3. **Verify county spellings** — catch typos and unexpected counties before filtering.
-4. **Filter to Los Angeles County** — write filtered copies to `la_only/`.
-5. **Correct the misplaced 2021 ozone file** — one AirData file (`ad_viz_plotval_data-8.csv`) was actually a Louisville-metro export. The corrected LA file lives in `raw_corrections/` and gets copied into place automatically.
-6. **Build 2-pollutant baseline** — merge ozone + PM2.5, take daily max, save `la_daily_aqi_2016_2025.csv`.
-7. **Pull all 5 pollutants from the AQS API** — 50 requests (5 pollutants × 10 years), 6s apart, ~5 minutes. Writes to `api_pulls/`.
-8. **Investigate a discrepancy** — the initial 5-pollutant series was *lower* than the 2-pollutant series on 1,071 days. Traced to a missing parameter code (see below).
-9. **Fix and rebuild as v2** — pull the missing param code, re-run the pipeline, save `la_daily_aqi_5pollutants_v2_2016_2025.csv`.
+One ordering detail matters: **wind speed is computed per hour and then averaged**, not
+derived from the daily mean U/V. A day that blows hard east in the morning and hard west
+in the evening has a high mean speed but a near-zero mean vector, and the second method
+would wrongly report it as calm. Direction is the reverse case and does use the mean
+vector.
 
-### The 88502 fix (one-sentence version)
+### `data/processed/train.csv` / `test.csv`
+The modeling split. 37 features, target `daily_aqi`.
 
-EPA reports PM2.5 under two AQI-valid parameter codes (`88101` = Local Conditions and `88502` = Acceptable PM2.5 AQI & Speciation Mass); the first API pull only fetched 88101, so ~39% of PM2.5 monitor-days were missing until we added a second pull for 88502.
+- Same-day weather, plus lags 1/2/3 and 3-day rolling means for the five persistent
+  variables (temperature, humidity, wind speed, calm hours).
+- Wind direction and day-of-year encoded as sin/cos, since both wrap around and would
+  otherwise read as huge numeric jumps at the boundary.
+- **Split chronologically at 2023-01-01** — train on 2016–2022 (2,554 days), test on
+  2023–2025 (1,095 days). A random split would let the model train on 2024 and test on
+  2023, seeing the future and producing a meaningless score.
 
-### Folder structure
+`feature_manifest.json` alongside them records the feature list and split so every model
+notebook loads exactly the same thing.
 
+---
+
+## Model results
+
+All six trained on 2016–2022, scored on 2023–2025. Tuned with `GridSearchCV` +
+`TimeSeriesSplit(5)` inside the training years only.
+
+| model | test RMSE | test MAE | test R² | within 10 AQI | overfit gap |
+|---|---:|---:|---:|---:|---:|
+| **SVR (RBF)** | **18.85** | 13.57 | **0.782** | 49.0% | **+1.6** |
+| Neural Network (MLP) | 19.05 | 13.99 | 0.777 | 48.5% | +2.2 |
+| Gradient Boosting | 19.48 | 13.84 | 0.767 | **50.1%** | +10.7 |
+| Random Forest | 20.28 | 14.67 | 0.748 | 47.5% | +11.5 |
+| KNN | 21.89 | 15.71 | 0.706 | 45.7% | n/a * |
+| Linear Regression | 24.01 | 17.88 | 0.646 | 38.3% | −0.5 |
+| *baseline: day-of-year climatology* | *31.76* | *24.51* | *0.381* | *28.7%* | — |
+| *baseline: training mean* | *40.42* | *33.23* | *−0.003* | *13.9%* | — |
+
+\* KNN's train RMSE is exactly 0.000 — an artifact of `weights='distance'`, where a
+training point is its own nearest neighbour at distance zero. Its gap is not meaningful.
+
+**Reading the table.** SVR wins, but the top four cluster between 18.9 and 20.3 and are
+close to tied. What separates SVR is the *overfit gap*: at +1.6 against +10.7 and +11.5
+for the tree ensembles, its training performance is an honest estimate of its behavior on
+new data.
+
+**The most important finding is not in the table.** Every one of the six models is biased
+**downward on unhealthy days** (−27 to −48 AQI points above 150) and upward on clean ones.
+That is regression to the mean under squared-error loss, not a tuning failure, and it is
+the main obstacle to using any of these as a public-health warning system.
+
+Full breakdown, charts, and next steps: `models/07_model_comparison.ipynb`.
+
+---
+
+## Credentials
+
+Never commit these.
+
+- **EPA AQS API** — `.env` at the repo root with `AQS_EMAIL` and `AQS_KEY`. Get a key at
+  `https://aqs.epa.gov/data/api/signup?email=YOUR_EMAIL` (emailed within a minute).
+- **NASA Earthdata** — a `urs.earthdata.nasa.gov` entry in `~/.netrc`, `chmod 600`. Used
+  by wget for the MERRA-2 download.
+
+Both files are gitignored. If either is missing, the notebooks fall back to a `getpass`
+prompt.
+
+---
+
+## Regenerating derived data
+
+**`data/interim/`** (`raw_renamed/`, `la_only/`, `api_pulls/`) — run
+`notebooks/aqi_pipeline.ipynb` end to end. The AQS API pull takes ~5 minutes (requests
+are spaced 6 s apart to respect EPA rate limits) and is idempotent, skipping years
+already saved. Everything else takes seconds.
+
+**`data/raw/merra2_slv/`** — ~200 MB of NetCDF, re-downloadable from GES DISC using the
+committed URL list:
+
+```bash
+cd data/raw/merra2_slv
+wget --load-cookies ~/.urs_cookies --save-cookies ~/.urs_cookies \
+     --auth-no-challenge=on --keep-session-cookies --content-disposition \
+     -i ../merra2_manifest.txt
 ```
-├── aqi_pipeline.ipynb                         # source of truth — full pipeline
-├── raw_corrections/                           # in-repo corrections for known raw-data bugs
-│   └── ozone_2021_la.csv                      # corrected 2021 LA ozone file
-├── la_daily_aqi_2016_2025.csv                 # 2-pol baseline (ozone + PM2.5, AirData)
-├── la_daily_aqi_5pollutants_2016_2025.csv     # v1: 5-pol without 88502 (kept for diff)
-├── la_daily_aqi_5pollutants_v2_2016_2025.csv  # v2: FINAL, includes 88502 fix
-├── EPA Air Quality (Ozone Data)/              # raw AirData ozone exports (2014–2026)
-├── EPA Air Quality (Pollutant Data)/          # raw AirData PM2.5 exports (2014–2026)
-├── .env                                       # gitignored — holds AQS_EMAIL and AQS_KEY
-├── raw_renamed/                               # gitignored — regenerated by notebook
-├── la_only/                                   # gitignored — regenerated by notebook
-└── api_pulls/                                 # gitignored — regenerated by notebook
-```
 
-### Regenerating the derived data
+`--content-disposition` produces a doubled `.nc4.nc4` extension; strip it with
+`for f in *.nc4.nc4; do mv "$f" "${f%.nc4}"; done`.
 
-The three folders `raw_renamed/`, `la_only/`, `api_pulls/` are gitignored — they're rebuilt when you run the notebook end-to-end. To do that:
+---
 
-1. Get an AQS API key: `https://aqs.epa.gov/data/api/signup?email=YOUR_EMAIL` (EPA emails a key within a minute).
-2. Create `.env` in the repo root:
-   ```
-   AQS_EMAIL=your.email@example.com
-   AQS_KEY=your-key-here
-   ```
-3. Launch Jupyter from the repo root: `jupyter notebook aqi_pipeline.ipynb`
-4. Run all cells. The API pull takes ~5 minutes (5s delay between requests to respect EPA rate limits).
+## References
 
-Everything else — filtering, dedup, daily-max aggregation — takes a few seconds.
-
-### v2 vs 2-pol baseline
-
-The v2 series matches the 2-pol AirData baseline on 3,521 of 3,653 days and exceeds it on 132 days (all NO2-driven — AirData had no NO2 data). Zero days where v2 < 2-pol, confirming the 88502 fix closed the gap.
-
-| metric | 2-pol (AirData, 2 pollutants) | v2 (API, 5 pollutants + 88502) |
-|---|---:|---:|
-| Days covered | 3,653 | 3,653 |
-| Mean daily AQI | 88.5 | 88.8 |
-| Median | 75 | 77 |
-| Max | 250 | 250 |
-| Days > 100 | 1,077 | 1,058 |
-| Days > 150 | 354 | 354 |
-| Dominant pollutant mix | Ozone 47% / PM2.5 53% | Ozone 46% / PM2.5 51% / NO2 4% |
+- EPA AQS API dailyData endpoint — `https://aqs.epa.gov/data/api/dailyData/byCounty`
+- EPA AQS parameter class list — `https://aqs.epa.gov/data/api/list/parametersByClass?pc=AQI+POLLUTANTS`
+  (used to confirm CO/SO2/NO2 have no secondary codes analogous to PM2.5's 88502)
+- MERRA-2 M2T1NXSLV product page — search "M2T1NXSLV" at gesdisc.eosdis.nasa.gov
+- Large files also mirrored in the team Google Drive:
+  https://drive.google.com/drive/folders/1z5JRiwKwZazVCDbprDFK9i0DAzCEWDrr?usp=share_link

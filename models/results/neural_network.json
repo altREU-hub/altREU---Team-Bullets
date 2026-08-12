@@ -1,0 +1,24 @@
+{
+  "model": "Neural Network",
+  "params": {
+    "model__alpha": "0.1",
+    "model__hidden_layer_sizes": "(128, 64)",
+    "model__learning_rate_init": "0.001"
+  },
+  "notes": "MLP w/ early stopping, GridSearchCV over 18 combos",
+  "train": {
+    "rmse": 16.893314879061865,
+    "mae": 11.870788622181554,
+    "r2": 0.7915881266380698,
+    "mape": 13.256920652165558,
+    "within_10": 56.77368833202819
+  },
+  "test": {
+    "rmse": 19.05415069217653,
+    "mae": 13.991957411884961,
+    "r2": 0.7772429722955607,
+    "mape": 16.62909860524823,
+    "within_10": 48.49315068493151
+  },
+  "overfit_gap": 2.160835813114666
+}

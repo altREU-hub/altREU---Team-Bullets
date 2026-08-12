@@ -1,0 +1,24 @@
+{
+  "model": "KNN",
+  "params": {
+    "model__n_neighbors": 15,
+    "model__p": 1,
+    "model__weights": "distance"
+  },
+  "notes": "StandardScaler pipeline, GridSearchCV over 24 combos",
+  "train": {
+    "rmse": 0.0,
+    "mae": 0.0,
+    "r2": 1.0,
+    "mape": 0.0,
+    "within_10": 100.0
+  },
+  "test": {
+    "rmse": 21.887442129506248,
+    "mae": 15.712489669149353,
+    "r2": 0.7060711301066771,
+    "mape": 18.68420284019946,
+    "within_10": 45.662100456621005
+  },
+  "overfit_gap": 21.887442129506248
+}

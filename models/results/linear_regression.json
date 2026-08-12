@@ -1,0 +1,22 @@
+{
+  "model": "Linear Regression",
+  "params": {
+    "fit_intercept": true
+  },
+  "notes": "OLS baseline on standardized features",
+  "train": {
+    "rmse": 24.55067095645835,
+    "mae": 18.44735430479669,
+    "r2": 0.559831018727684,
+    "mape": 21.311469459304618,
+    "within_10": 36.80501174628035
+  },
+  "test": {
+    "rmse": 24.00696256288513,
+    "mae": 17.87872238253587,
+    "r2": 0.6463882775885004,
+    "mape": 21.06664613197057,
+    "within_10": 38.2648401826484
+  },
+  "overfit_gap": -0.5437083935732225
+}

@@ -1,0 +1,26 @@
+{
+  "model": "Gradient Boosting",
+  "params": {
+    "l2_regularization": 1.0,
+    "learning_rate": 0.03,
+    "max_iter": 600,
+    "max_leaf_nodes": 15,
+    "min_samples_leaf": 10
+  },
+  "notes": "HistGBR, GridSearchCV over 48 combos, TimeSeriesSplit(5)",
+  "train": {
+    "rmse": 8.73488155692563,
+    "mae": 6.552964686979705,
+    "r2": 0.9442805598563391,
+    "mape": 7.764502810992985,
+    "within_10": 78.50430696945966
+  },
+  "test": {
+    "rmse": 19.484319669901723,
+    "mae": 13.84242559273956,
+    "r2": 0.7670714540230331,
+    "mape": 15.817855884743418,
+    "within_10": 50.136986301369866
+  },
+  "overfit_gap": 10.749438112976092
+}

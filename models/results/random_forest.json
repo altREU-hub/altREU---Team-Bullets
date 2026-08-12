@@ -1,0 +1,25 @@
+{
+  "model": "Random Forest",
+  "params": {
+    "max_depth": 12,
+    "max_features": "sqrt",
+    "min_samples_leaf": 1,
+    "n_estimators": 300
+  },
+  "notes": "GridSearchCV over 36 combos, TimeSeriesSplit(5)",
+  "train": {
+    "rmse": 8.763158344696208,
+    "mae": 6.471348244648363,
+    "r2": 0.943919223069705,
+    "mape": 7.363709366065002,
+    "within_10": 79.60062646828504
+  },
+  "test": {
+    "rmse": 20.27489556148439,
+    "mae": 14.674357607492315,
+    "r2": 0.7477858345482239,
+    "mape": 17.199564818781692,
+    "within_10": 47.48858447488584
+  },
+  "overfit_gap": 11.51173721678818
+}
