@@ -59,7 +59,27 @@ OPENDAP = 'https://goldsmr4.gesdisc.eosdis.nasa.gov/opendap/MERRA2'
 STREAMS = ('400', '401')
 
 LAG_VARS = ['t2m_mean', 't2m_max', 'qv2m_mean', 'wind_speed_mean', 'calm_hours']
+LAG_TRAP = ['inversion_strength', 'ventilation_index', 'pblh_min']
 LAGS = [1, 2, 3]
+
+
+def active_manifest() -> tuple[Path, dict]:
+    """Prefer the enriched (physics) manifest when it exists.
+
+    The v2 feature set scores RMSE 16.91 against the base set's 18.34, so a deployed model
+    should use it. Falling back keeps this working on a checkout that has not run
+    notebooks/merra2_trapping_pipeline.ipynb yet.
+    """
+    for name in ('feature_manifest_v2.json', 'feature_manifest.json'):
+        path = PROCESSED / name
+        if path.exists():
+            return path, json.loads(path.read_text())
+    raise FileNotFoundError(f'no feature manifest in {PROCESSED}')
+
+
+def needs_trapping(features) -> bool:
+    return any(f.startswith(('pblh_', 't850_', 'slp_', 'tqv_',
+                             'inversion_', 'ventilation_')) for f in features)
 
 
 # ------------------------------------------------------------------- weather fetching
@@ -74,6 +94,20 @@ def _granule_url(date: pd.Timestamp, product: str, stream: str) -> str:
             f'T2M%5B0:23%5D%5B{LAT_SLICE}%5D%5B{LON_SLICE}%5D',
             f'U10M%5B0:23%5D%5B{LAT_SLICE}%5D%5B{LON_SLICE}%5D',
             f'V10M%5B0:23%5D%5B{LAT_SLICE}%5D%5B{LON_SLICE}%5D',
+            'time', f'lat%5B{LAT_SLICE}%5D', f'lon%5B{LON_SLICE}%5D',
+        ])
+    elif product == 'flx':
+        base = f'{OPENDAP}/M2T1NXFLX.5.12.4/{y}/{m}/MERRA2_{stream}.tavg1_2d_flx_Nx.{d}.nc4.nc4'
+        ce = ','.join([
+            f'PBLH%5B0:23%5D%5B{LAT_SLICE}%5D%5B{LON_SLICE}%5D',
+            'time', f'lat%5B{LAT_SLICE}%5D', f'lon%5B{LON_SLICE}%5D',
+        ])
+    elif product == 'slvx':
+        base = f'{OPENDAP}/M2T1NXSLV.5.12.4/{y}/{m}/MERRA2_{stream}.tavg1_2d_slv_Nx.{d}.nc4.nc4'
+        ce = ','.join([
+            f'T850%5B0:23%5D%5B{LAT_SLICE}%5D%5B{LON_SLICE}%5D',
+            f'SLP%5B0:23%5D%5B{LAT_SLICE}%5D%5B{LON_SLICE}%5D',
+            f'TQV%5B0:23%5D%5B{LAT_SLICE}%5D%5B{LON_SLICE}%5D',
             'time', f'lat%5B{LAT_SLICE}%5D', f'lon%5B{LON_SLICE}%5D',
         ])
     else:
@@ -145,17 +179,48 @@ def daily_weather(date: pd.Timestamp) -> dict:
     }
 
 
+def daily_trapping(date: pd.Timestamp) -> dict:
+    """One day of PBLH + T850/SLP/TQV -> the same daily summary as the trapping notebook."""
+    import xarray as xr
+
+    with xr.open_dataset(fetch_granule(date, 'flx')) as ds:
+        pblh = ds.PBLH.mean(dim=('lat', 'lon')).values
+        hours = pd.DatetimeIndex(ds.time.values).hour
+    night = pblh[(hours < 7) | (hours >= 20)]
+
+    with xr.open_dataset(fetch_granule(date, 'slvx')) as ds:
+        t850 = ds.T850.mean(dim=('lat', 'lon')).values - 273.15
+        slp = ds.SLP.mean(dim=('lat', 'lon')).values / 100.0
+        tqv = ds.TQV.mean(dim=('lat', 'lon')).values
+
+    return {
+        'date': date.normalize(),
+        'pblh_mean': pblh.mean(), 'pblh_min': pblh.min(), 'pblh_max': pblh.max(),
+        'pblh_night': night.mean(), 'pblh_range': pblh.max() - pblh.min(),
+        't850_mean': t850.mean(), 't850_max': t850.max(),
+        'slp_mean': slp.mean(), 'tqv_mean': tqv.mean(),
+    }
+
+
 # ---------------------------------------------------------------- feature engineering
 
-def build_features(target_date: pd.Timestamp, weather: pd.DataFrame | None = None) -> pd.DataFrame:
+def build_features(target_date: pd.Timestamp,
+                   weather: pd.DataFrame | None = None,
+                   trapping: pd.DataFrame | None = None) -> pd.DataFrame:
     """Build the single feature row for `target_date`.
 
-    Mirrors notebooks/build_modeling_dataset.ipynb exactly. `weather` may be supplied to
-    skip downloading (used by the self-test and by anyone feeding forecast data instead
-    of reanalysis).
+    Mirrors notebooks/build_modeling_dataset.ipynb and, when the enriched manifest is
+    active, notebooks/merra2_trapping_pipeline.ipynb plus notebook 09.
+
+    `weather` / `trapping` may be supplied to skip downloading — used by the self-test and
+    by anyone feeding forecast data instead of reanalysis.
     """
     target_date = pd.Timestamp(target_date).normalize()
     window = [target_date - pd.Timedelta(days=k) for k in range(3, -1, -1)]
+
+    _, manifest = active_manifest()
+    features = manifest['features']
+    want_trap = needs_trapping(features)
 
     if weather is None:
         weather = pd.DataFrame([daily_weather(d) for d in window])
@@ -167,6 +232,21 @@ def build_features(target_date: pd.Timestamp, weather: pd.DataFrame | None = Non
 
     df = weather.copy()
 
+    if want_trap:
+        if trapping is None:
+            trapping = pd.DataFrame([daily_trapping(d) for d in window])
+        trapping = trapping.sort_values('date').reset_index(drop=True)
+        missing = set(window) - set(trapping['date'])
+        if missing:
+            raise ValueError(f'missing trapping data for {sorted(str(d.date()) for d in missing)}')
+        df = df.merge(trapping, on='date', how='inner')
+
+        # derived physics — must match merra2_trapping_pipeline.ipynb exactly
+        df['inversion_strength']     = df['t850_mean'] - df['t2m_mean']
+        df['inversion_strength_max'] = df['t850_max']  - df['t2m_max']
+        df['ventilation_index']      = df['pblh_mean'] * df['wind_speed_mean']
+        df['ventilation_index_min']  = df['pblh_min']  * df['wind_speed_mean']
+
     rad = np.deg2rad(df['wind_dir_mean'])
     df['wind_dir_sin'] = np.sin(rad)
     df['wind_dir_cos'] = np.cos(rad)
@@ -177,20 +257,26 @@ def build_features(target_date: pd.Timestamp, weather: pd.DataFrame | None = Non
     df['doy_cos'] = np.cos(2 * np.pi * doy / 365.25)
     df['is_weekend'] = (df['date'].dt.dayofweek >= 5).astype(int)
 
-    for var in LAG_VARS:
+    lag_targets = list(LAG_VARS) + (list(LAG_TRAP) if want_trap else [])
+    for var in lag_targets:
         for lag in LAGS:
             df[f'{var}_lag{lag}'] = df[var].shift(lag)
         df[f'{var}_roll3'] = df[var].rolling(window=3, min_periods=3).mean()
 
     row = df[df['date'] == target_date]
-    if row.empty or row.isna().any(axis=1).iloc[0]:
-        raise ValueError(f'could not build a complete feature row for {target_date.date()}')
+    if row.empty:
+        raise ValueError(f'could not build a feature row for {target_date.date()}')
 
-    features = json.loads((PROCESSED / 'feature_manifest.json').read_text())['features']
     unknown = set(features) - set(row.columns)
     if unknown:
-        raise ValueError(f'feature_manifest expects columns this builder does not produce: {sorted(unknown)}')
-    return row[features].reset_index(drop=True)
+        raise ValueError(
+            f'feature manifest expects columns this builder does not produce: {sorted(unknown)}'
+        )
+    out = row[features].reset_index(drop=True)
+    if out.isna().any(axis=1).iloc[0]:
+        bad = [c for c in features if pd.isna(out[c].iloc[0])]
+        raise ValueError(f'incomplete feature row for {target_date.date()}; missing {bad[:6]}')
+    return out
 
 
 # --------------------------------------------------------------------------- modelling
@@ -224,10 +310,13 @@ def train_and_save(verbose: bool = True) -> dict:
     from sklearn.linear_model import RidgeCV
     from sklearn.model_selection import TimeSeriesSplit
 
-    manifest = json.loads((PROCESSED / 'feature_manifest.json').read_text())
+    man_path, manifest = active_manifest()
     features, target = manifest['features'], manifest['target']
 
-    full = pd.read_csv(PROCESSED / 'la_modeling_dataset.csv', parse_dates=['date'])
+    dataset = ('la_modeling_dataset_v2.csv' if man_path.name.endswith('_v2.json')
+               else 'la_modeling_dataset.csv')
+    full = pd.read_csv(PROCESSED / dataset, parse_dates=['date'])
+    print(f'using {man_path.name} + {dataset}')
     X, y = full[features], full[target]
     if verbose:
         print(f'training on all {len(X)} days '
@@ -250,11 +339,13 @@ def train_and_save(verbose: bool = True) -> dict:
     SAVED.mkdir(parents=True, exist_ok=True)
     joblib.dump({'base_models': fitted, 'stack': stack,
                  'members': list(builders), 'features': features, 'target': target,
+                 'manifest': man_path.name,
+                 'uses_trapping': needs_trapping(features),
                  'trained_through': str(full.date.max().date()),
                  'n_training_days': len(X)},
                 SAVED / 'ensemble.joblib', compress=3)
 
-    meta = {'members': list(builders),
+    meta = {'members': list(builders), 'manifest': man_path.name,
             'stack_coefficients': dict(zip(builders, stack.coef_.round(4).tolist())),
             'stack_intercept': round(float(stack.intercept_), 4),
             'n_training_days': int(len(X)),
@@ -286,7 +377,9 @@ def predict(date, explain: bool = False) -> dict:
 
     window = [date - pd.Timedelta(days=k) for k in range(3, -1, -1)]
     weather = pd.DataFrame([daily_weather(d) for d in window])
-    X = build_features(date, weather=weather)
+    trapping = (pd.DataFrame([daily_trapping(d) for d in window])
+                if bundle.get('uses_trapping') else None)
+    X = build_features(date, weather=weather, trapping=trapping)
 
     cols = np.column_stack([m.predict(X) for m in bundle['base_models'].values()])
     members = dict(zip(bundle['members'], cols[0].round(1)))
@@ -294,6 +387,7 @@ def predict(date, explain: bool = False) -> dict:
 
     out = {'date': str(date.date()), 'predicted_aqi': round(value, 1),
            'category': aqi_category(value), 'member_predictions': members,
+           'n_features': len(bundle['features']),
            'trained_through': bundle['trained_through']}
     if explain:
         out['weather'] = weather.set_index('date').round(2).to_dict('index')
@@ -316,25 +410,50 @@ def self_test(n: int = 5) -> bool:
     This is the guard that matters: if `build_features` ever drifts from the notebook's
     engineering, predictions would be silently wrong. Uses stored weather so it runs offline.
     """
-    manifest = json.loads((PROCESSED / 'feature_manifest.json').read_text())
+    man_path, manifest = active_manifest()
     features = manifest['features']
-    stored = pd.read_csv(PROCESSED / 'la_modeling_dataset.csv', parse_dates=['date'])
+    dataset = ('la_modeling_dataset_v2.csv' if man_path.name.endswith('_v2.json')
+               else 'la_modeling_dataset.csv')
+    stored = pd.read_csv(PROCESSED / dataset, parse_dates=['date'])
     weather_all = pd.read_csv(PROCESSED / 'la_daily_weather_2016_2025.csv', parse_dates=['date'])
+    trap_all = None
+    if needs_trapping(features):
+        trap_all = pd.read_csv(PROCESSED / 'la_daily_trapping_2016_2025.csv', parse_dates=['date'])
+        if 't850_max' not in trap_all.columns:
+            raise ValueError(
+                'la_daily_trapping_2016_2025.csv predates the t850_max helper column. '
+                'Re-run notebooks/merra2_trapping_pipeline.ipynb.'
+            )
+    print(f'self-test against {dataset} ({len(features)} features)')
 
     rng = np.random.default_rng(0)
     sample = stored.sample(n, random_state=int(rng.integers(1e6)))
 
-    worst = 0.0
+    # Compare on RELATIVE difference. The stored dataset holds derived columns computed at
+    # full precision then written to CSV, while build_features recomputes them from those
+    # rounded CSVs — so an exact match is not achievable and demanding one would just force
+    # the tolerance to be loosened arbitrarily. Anything above ~1e-5 relative is real drift.
+    worst, worst_feature, worst_date = 0.0, None, None
     for _, row in sample.iterrows():
         d = row['date']
         window = weather_all[(weather_all.date >= d - pd.Timedelta(days=3)) & (weather_all.date <= d)]
-        built = build_features(d, weather=window)
-        diff = float(np.max(np.abs(built[features].values[0] - row[features].values.astype(float))))
-        worst = max(worst, diff)
+        tw = None
+        if trap_all is not None:
+            tw = trap_all[(trap_all.date >= d - pd.Timedelta(days=3)) & (trap_all.date <= d)]
+        built = build_features(d, weather=window, trapping=tw)
 
-    ok = worst < 1e-6
-    print(f'self-test on {n} historical dates: max feature difference {worst:.2e} '
-          f'-> {"PASS" if ok else "FAIL"}')
+        a = built[features].values[0].astype(float)
+        b = row[features].values.astype(float)
+        rel = np.abs(a - b) / np.maximum(np.abs(b), 1e-3)
+        k = int(np.argmax(rel))
+        if rel[k] > worst:
+            worst, worst_feature, worst_date = float(rel[k]), features[k], str(d.date())
+
+    ok = worst < 1e-5
+    print(f'self-test on {n} historical dates: max relative difference {worst:.2e} '
+          f'({worst_feature} on {worst_date}) -> {"PASS" if ok else "FAIL"}')
+    if not ok:
+        print('  A difference this large means build_features has drifted from the notebooks.')
     return ok
 
 

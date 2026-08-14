@@ -34,11 +34,14 @@ jupyter notebook
 ### Predicting a date
 
 ```bash
-python models/predict.py --train           # fit on all data, save artifacts (~2 min)
-python models/predict.py 2026-03-07        # -> predicted AQI 64.3 (Moderate); actual was 62
+python models/predict.py --train           # fit on all data, save artifacts (~3 min)
+python models/predict.py 2026-03-07        # -> predicted AQI 58.6 (Moderate); actual was 62
 python models/predict.py 2026-03-07 --explain   # ...and show the weather behind it
 python models/predict.py --self-test       # verify feature engineering matches the dataset
 ```
+
+`predict.py` is manifest-driven: it uses the 61-feature physics set when
+`feature_manifest_v2.json` is present, falling back to the 37-feature set otherwise.
 
 **Any date needs only four days of weather** — the target day plus the three before it. Every lag
 in the feature set is a *weather* lag, so there is no recursive chain back through history and no
@@ -216,11 +219,15 @@ atmospheric variables bought 1.4–1.6.
 ### The 2026 forward test
 
 The only genuinely prospective check: a model trained through 2025-12-30, scored on EPA data for
-2026 that did not exist when the project was written. 151 days, **RMSE 15.17, R² 0.765**.
+2026 that did not exist when the project was written. 151 days, **RMSE 14.88, R² 0.774**.
 
 Compared honestly against a season-matched benchmark — the same calendar months from the
-retrospective test period, RMSE 14.07 — that is about **1.1 points of degradation a year out**.
-Bias is +3.05, consistent with LA air improving faster than a model fitted on dirtier years expects.
+retrospective test period, RMSE 14.07 — that is about **0.8 points of degradation a year out**.
+Bias is +1.50, consistent with LA air improving faster than a model fitted on dirtier years expects.
+
+The enriched feature set also wins prospectively (14.88 vs the 37-feature model's 15.17, within-10
+58.9% vs 52.3%, bias halved), though at n=151 the paired bootstrap cannot resolve it:
+CI [−1.579, +1.066].
 
 The full-year 18.34 is *not* the right comparison: 2026 data so far is January–May, which excludes
 the ozone season.

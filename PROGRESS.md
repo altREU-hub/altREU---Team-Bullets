@@ -4,6 +4,44 @@ Short running record of what changed and when. Newest first.
 
 ---
 
+## 2026-08-14 (later) — Deployable model moved to the enriched feature set
+
+`models/predict.py` is now manifest-driven: it uses `feature_manifest_v2.json` (61 features,
+including the trapping physics) when present and falls back to the 37-feature set. It fetches the
+`flx` and `slvx` granules only when the active manifest needs them.
+
+The deployed model is therefore the best model, not the second-best. Retrained on all 3,640
+labelled days; stack coefficients SVR 0.36 / MLP 0.17 / GBR 0.51.
+
+**2026 forward test, both deployable models, n=151:**
+
+| feature set | RMSE | MAE | R² | within 10 | bias |
+|---|---:|---:|---:|---:|---:|
+| 37 base | 15.17 | 11.41 | 0.765 | 52.3% | +3.05 |
+| 61 enriched | **14.88** | **11.11** | **0.774** | **58.9%** | **+1.50** |
+
+Better on every metric, and the bias halves — but the paired bootstrap gives −0.298 RMSE with a CI
+of [−1.579, +1.066], **not significant at n=151**. The retrospective result on 1,089 days stands;
+five months cannot settle a question this size. Worth re-running once summer 2026 publishes.
+
+**Feature pruning tested and rejected** (now a section in notebook 09). Dropping the 5 weakest
+features by training-set correlation gives −0.097 RMSE, CI [−0.275, +0.077] — not significant.
+Dropping 10/15/20 makes it steadily worse. The overfit gap does shrink monotonically (+7.64 →
++6.03), which shows the gap was measuring memorization rather than harm: the regularized learners
+already discount uninformative inputs. **Keep all 61 features.** This supersedes the earlier note
+claiming pruning was an outstanding improvement.
+
+Two smaller fixes:
+- The trapping CSV now carries `t850_max` as an explicit helper column (excluded from the feature
+  set) so `inversion_strength_max` can be recomputed exactly downstream instead of being derived
+  back from rounded values.
+- `predict.py --self-test` now uses a **relative** tolerance of 1e-5. Derived columns are stored at
+  full precision and recomputed from rounded CSVs, so an exact match was never achievable; the
+  absolute test was failing at 1.5e-4 on values of magnitude ~1,700 (8e-8 relative). Currently
+  passes at 1.07e-06.
+
+---
+
 ## 2026-08-14 — Trapping physics added; best model now RMSE 16.91
 
 **The biggest single improvement in the project, and it came from features, not models.**

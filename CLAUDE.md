@@ -27,13 +27,18 @@ joined, and used to train and compare ten models, then validated forward on 2026
 8. **Comparison** — `models/13_final_comparison.ipynb`.
 9. **Deployment** — `models/predict.py`: `--train` persists a model fitted on all data,
    `predict.py YYYY-MM-DD` predicts any date, `--self-test` checks feature engineering.
+   It is **manifest-driven**: it uses `feature_manifest_v2.json` (61 features) when present and
+   falls back to the 37-feature manifest, fetching `flx`/`slvx` granules only when needed.
+   The self-test uses a *relative* tolerance (1e-5) because derived columns are recomputed from
+   rounded CSVs; an exact match is not achievable.
 
 Results (test = 2023–2025):
 - Core 7 on 37 features: Ensemble 18.34 / R² 0.794 → SVR 18.85 → MLP 19.05 → GBR 19.48 →
   RF 20.28 → KNN 21.89 → Linear 24.01.
 - **Best overall: Ensemble + Physics, 16.91 / R² 0.825** (61 features, scored on 1,089 days).
 - Climatology baseline (no weather): 31.76 / R² 0.381.
-- 2026 forward test: RMSE 15.17 vs season-matched benchmark 14.07.
+- 2026 forward test (enriched, deployable): RMSE 14.88 vs season-matched benchmark 14.07;
+  the 37-feature model gets 15.17. The enriched edge is not significant at n=151.
 
 Running change log: `PROGRESS.md`. Full detail: `README.md`.
 
@@ -115,10 +120,12 @@ Everything gitignored is regeneratable — README documents how for each.
   the tool for the rest: q=0.9 catches 76% of unhealthy days vs 47%, at the cost of overall RMSE
   rising 18.3 → 25.0. Recommendation on record: ship two models, one for "what will AQI be" and
   one for "should we warn".
-- **Feature pruning not done.** 61 features on 2,554 training days widened the overfit gap to
-  +7.6. `pblh_min` and its lags correlate with AQI at ≈ −0.02 and are dead weight.
-- **Notebooks 01–08 still use the 37-feature set.** Only the ensemble has been rerun with the
-  physics variables; refitting the rest is outstanding.
+- **Feature pruning was tested and does NOT help** (notebook 09). Dropping the 5 weakest features
+  gives −0.097 RMSE, CI [−0.275, +0.077], not significant; dropping more actively hurts. The
+  overfit gap shrinks monotonically as features come out, which shows the gap was measuring
+  memorization rather than harm. Keep all 61. Don't re-litigate this.
+- **Notebooks 01–08 still use the 37-feature set.** Only the ensemble (09) and the deployed model
+  (`predict.py`) use the physics variables; refitting the individual models is outstanding.
 - **PM2.5 is the binding constraint and weather cannot fix it.** Fitted separately, ozone reaches
   R² 0.870 and PM2.5 only 0.418, and the physics features improved ozone RMSE by 2.69 against
   PM2.5's 0.20. The missing input is a smoke/fire indicator (NOAA HMS), not more meteorology.
