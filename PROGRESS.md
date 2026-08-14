@@ -4,6 +4,90 @@ Short running record of what changed and when. Newest first.
 
 ---
 
+## 2026-08-14 — Trapping physics added; best model now RMSE 16.91
+
+**The biggest single improvement in the project, and it came from features, not models.**
+
+Added four MERRA-2 variables that measure what actually traps pollution over the LA basin —
+`PBLH` (M2T1NXFLX) and `T850`/`SLP`/`TQV` (M2T1NXSLV) — plus two derived features:
+`inversion_strength` = T850 − T2M, and `ventilation_index` = PBLH × wind speed.
+
+- `notebooks/merra2_trapping_pipeline.ipynb` aggregates 7,304 new granules to daily.
+- `scripts/download_merra2_extra.sh` re-downloads them (idempotent; takes the date list and the
+  irregular 400/401 stream numbers from the filenames already in `merra2_slv/`).
+- `models/09_enriched_features.ipynb` is a clean ablation: identical models, split and tuning,
+  only the feature set changes.
+
+**Result: RMSE 18.50 → 16.91, R² 0.791 → 0.825.** Paired bootstrap CI [−2.279, −0.918],
+P(better) = 1.000. Roughly five times the gain the ensemble bought over its best member.
+
+`t850_mean` is now the top feature by permutation importance (14.07 RMSE points, 3.5× `t2m_max`),
+and it correlates 0.753 with daily AQI against `t2m_max`'s 0.705. Temperature 1.5 km up beats
+surface temperature because it measures the air mass without marine-layer contamination.
+
+**The hypothesis going in was wrong, and that is the interesting part.** Notebook 08 predicted the
+gain would land on PM2.5, since these variables describe dispersion. It went almost entirely to
+ozone (RMSE gain 2.69) rather than PM2.5 (0.20). `t850_mean` is really measuring the warm subsiding
+air of a high-pressure ridge, which is the ozone-producing synoptic pattern. PM2.5 did not improve
+because its unexplained variance was never meteorological — it is smoke and combustion.
+
+**First thing to move the extreme days.** MAE above AQI 150 fell 31.07 → 24.60 and bias −29.2 →
+−21.1. Every earlier attempt either failed or traded away average accuracy. The remaining bias is
+genuine regression to the mean.
+
+Cost: overfit gap widened +5.9 → +7.6 with 61 features on 2,554 training days. `pblh_min` and its
+lags correlate at ≈ −0.02 and should be pruned.
+
+**`models/13_final_comparison.ipynb`** (renamed from 08 → 12 → 13) now covers all ten models in
+three groups, because they do not all answer the same question: seven core models on identical
+features, two variants that change the target or objective, and one on a different feature set.
+The physics model is scored on 1,089 days rather than 1,095, so predictions are aligned by date
+before any cross-group comparison.
+
+---
+
+## 2026-08-13 — Ensemble added as model 07; comparison renumbered to 08
+
+**Why.** A paired bootstrap showed the ranking among the top individual models was not
+statistically supported: SVR beat the MLP by 0.203 RMSE with a 95% CI of [−0.65, +0.25],
+straddling zero. Picking a winner there was fitting noise.
+
+**`models/07_ensemble.ipynb`** combines SVR + MLP + Gradient Boosting, reusing the
+hyperparameters already selected in notebooks 03/04/06 (no new search, so nothing touches
+the test set). Three blending strategies compared, with weights learned only from
+out-of-fold `TimeSeriesSplit` predictions on the training years:
+
+| strategy | test RMSE | within 10 AQI |
+|---|---:|---:|
+| stacked ridge | **18.336** | **53.8%** |
+| equal average | 18.481 | 51.1% |
+| inverse-RMSE weights | 18.482 | 51.1% |
+
+The stacked ridge won (coefficients SVR 0.31 / MLP 0.25 / GBR 0.48), and unlike the
+individual-model ranking this difference is real — paired bootstrap CI [−0.248, −0.042]
+against the equal average, [−0.887, −0.162] against SVR alone.
+
+Base-model residuals correlate at 0.90, which capped the achievable gain in advance: only
+the uncorrelated 10% is available to cancel. Final result is **RMSE 18.34, R² 0.794** — the
+best in the project, ~3% better than SVR alone, at zero cost in new data or tuning.
+
+**Caveat recorded in the notebook:** the choice among the three blending strategies was
+informed by test performance, a mild form of test-set selection. Fully rigorous practice
+would select by nested CV. All three strategies beat every individual model, so the headline
+conclusion does not depend on the choice, but 18.34 reads slightly optimistic.
+
+**The ensemble does not fix the extreme-day problem.** On the 122 unhealthy days it does not
+beat the best individual member. All three members miss those days for the same reason, so
+averaging cannot rescue them — that needs a change of objective, not a better blend.
+
+**`08_model_comparison.ipynb`** (renamed from 07) now covers all seven models and adds a
+bootstrap section: single-model CIs plus paired comparisons against the leader. Key
+methodological note captured there — never compare two models by checking whether their
+individual confidence intervals overlap; that test is far too conservative. Compare pairwise
+on the same resampled days.
+
+---
+
 ## 2026-08-12 — Modeling stage complete
 
 **Environment**

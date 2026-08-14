@@ -1,0 +1,53 @@
+{
+  "model": "Ensemble + Physics",
+  "params": {
+    "n_features": 61,
+    "new_features": [
+      "pblh_mean",
+      "pblh_min",
+      "pblh_max",
+      "pblh_night",
+      "pblh_range",
+      "t850_mean",
+      "slp_mean",
+      "tqv_mean",
+      "inversion_strength",
+      "inversion_strength_max",
+      "ventilation_index",
+      "ventilation_index_min",
+      "inversion_strength_lag1",
+      "inversion_strength_lag2",
+      "inversion_strength_lag3",
+      "inversion_strength_roll3",
+      "ventilation_index_lag1",
+      "ventilation_index_lag2",
+      "ventilation_index_lag3",
+      "ventilation_index_roll3",
+      "pblh_min_lag1",
+      "pblh_min_lag2",
+      "pblh_min_lag3",
+      "pblh_min_roll3"
+    ],
+    "members": [
+      "SVR",
+      "MLP",
+      "GBR"
+    ]
+  },
+  "notes": "Stacked ensemble on base features + MERRA-2 trapping physics",
+  "train": {
+    "rmse": 9.27259417499202,
+    "mae": 6.689093923564849,
+    "r2": 0.9372473926743138,
+    "mape": 7.478493609119491,
+    "within_10": 80.08624068992552
+  },
+  "test": {
+    "rmse": 16.910944380407656,
+    "mae": 11.924867546413601,
+    "r2": 0.8251833864957243,
+    "mape": 13.809741322224447,
+    "within_10": 56.473829201101935
+  },
+  "overfit_gap": 7.638350205415636
+}
