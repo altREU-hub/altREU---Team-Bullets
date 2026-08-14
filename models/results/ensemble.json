@@ -1,0 +1,33 @@
+{
+  "model": "Ensemble",
+  "params": {
+    "members": [
+      "SVR",
+      "MLP",
+      "GBR"
+    ],
+    "weighting": "stacked ridge on out-of-fold predictions",
+    "coefficients": {
+      "SVR": 0.307,
+      "MLP": 0.246,
+      "GBR": 0.483
+    },
+    "intercept": -3.556
+  },
+  "notes": "Stacked SVR + MLP + GBR; base params reused from 03/04/06",
+  "train": {
+    "rmse": 12.400304991523454,
+    "mae": 8.889365994729799,
+    "r2": 0.887705771123158,
+    "mape": 9.949249832065018,
+    "within_10": 69.49882537196555
+  },
+  "test": {
+    "rmse": 18.336169364391893,
+    "mae": 12.948938011553595,
+    "r2": 0.7937141463235657,
+    "mape": 14.777632294613067,
+    "within_10": 53.789954337899545
+  },
+  "overfit_gap": 5.935864372868439
+}

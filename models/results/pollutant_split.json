@@ -1,0 +1,28 @@
+{
+  "model": "Pollutant Split",
+  "params": {
+    "pollutants": [
+      "aqi_ozone",
+      "aqi_pm25",
+      "aqi_no2"
+    ],
+    "per_pollutant_model": "stacked SVR+MLP+GBR",
+    "combination": "row-wise max of predictions"
+  },
+  "notes": "One stacked ensemble per pollutant, combined by max",
+  "train": {
+    "rmse": 13.061697907357708,
+    "mae": 8.951524264785604,
+    "r2": 0.8754074789807484,
+    "mape": 9.467806113144006,
+    "within_10": 70.1644479248238
+  },
+  "test": {
+    "rmse": 18.531112633471245,
+    "mae": 12.876914524498938,
+    "r2": 0.7893045220276379,
+    "mape": 14.09853403570709,
+    "within_10": 55.79908675799087
+  },
+  "overfit_gap": 5.469414726113538
+}

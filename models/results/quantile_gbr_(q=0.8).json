@@ -1,0 +1,23 @@
+{
+  "model": "Quantile GBR (q=0.8)",
+  "params": {
+    "loss": "quantile",
+    "quantile": 0.8
+  },
+  "notes": "Tail-focused: trades average accuracy for extreme-day recall",
+  "train": {
+    "rmse": 17.115191074773723,
+    "mae": 11.412662458588096,
+    "r2": 0.7860776271393017,
+    "mape": 14.692070794264161,
+    "within_10": 57.59592795614722
+  },
+  "test": {
+    "rmse": 20.69038859933434,
+    "mae": 15.700587546189384,
+    "r2": 0.7373426742098952,
+    "mape": 20.544756073625734,
+    "within_10": 41.55251141552511
+  },
+  "overfit_gap": 3.5751975245606182
+}

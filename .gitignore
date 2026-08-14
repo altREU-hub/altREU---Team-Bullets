@@ -21,3 +21,12 @@ data/raw/merra2_slv/
 # Skipped from git to keep the repo small; the notebooks rebuild them end-to-end.
 data/interim/
 __pycache__/
+
+# Additional MERRA-2 subsets — PBLH (trapping) and T850/SLP/TQV (inversion, pressure).
+# ~150 MB, re-downloadable; see README for the wget/curl commands.
+data/raw/merra2_flx/
+data/raw/merra2_slv_extra/
+
+# Fitted model artifacts — rebuilt by `python models/predict.py --train`.
+# joblib pickles are tied to the exact scikit-learn version, so they are not portable.
+models/saved/
